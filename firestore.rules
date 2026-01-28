@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * Core Philosophy: This ruleset establishes a clear boundary between public-facing
+     * content and private, submitted data. Portfolio content like projects, testimonials,
+     * and blog posts are publicly readable to showcase the agency's work. In this
+     * initial prototype, all writes to this public content are disabled, assuming
+     * content is managed directly via the Firebase Console or a separate admin tool.
+     * The 'leads' collection acts as a secure dropbox, allowing anyone to submit
+     * information without being able to read, modify, or even know about other
+     * submissions.
+     *
+     * Data Structure: A flat hierarchy with four top-level collections is used:
+     * - /projects: Public portfolio items.
+     * - /testimonials: Public client testimonials.
+     * - /blogPosts: Public blog articles.
+     * - /leads: Private lead capture submissions.
+     *
+     * Key Security Decisions:
+     * - Public Read, No Write: All content collections are world-readable but are
+     *   locked against all client-side writes (create, update, delete) for maximum
+     *   security. This prevents unauthorized modification of portfolio data.
+     * - Secure Dropbox for Leads: The '/leads' collection is write-only. This
+     *   allows the public landing page to submit lead data securely without exposing
+     *   any previously submitted sensitive information.
+     * - No User Ownership Model: The rules do not rely on user authentication for
+     *   access control, as the primary interactions are public viewing and anonymous
+     *   submission.
+     *
+     * Denormalization for Authorization: Not applicable in this simple model as there
+     * are no complex relationships or user-specific roles requiring denormalization.
+     *
+     * Structural Segregation: Public and private data are correctly segregated into
+     * separate top-level collections, which simplifies security rules and makes
+     * public listing operations safe and performant.
+     */
+
+    // --------------------------------------------------------------------------
+    // Helper Functions
+    // --------------------------------------------------------------------------
+
+    /**
+     * @name isSignedIn
+     * @description Checks if a user is authenticated.
+     * @returns {boolean} True if the user has a valid auth object.
+     */
+    // function isSignedIn() {
+    //   return request.auth != null;
+    // }
+
+    // --------------------------------------------------------------------------
+    // Collection: projects
+    // --------------------------------------------------------------------------
+    /**
+     * @description Public portfolio projects. Anyone can view them. No one can
+     *              modify them from the client.
+     * @path /projects/{projectId}
+     * @allow (get) Any user, signed in or not, retrieving a single project.
+     * @deny (create) Any user attempting to create a new project document.
+     * @principle Public Read with Admin-Only Writes. Since no admin role is
+     *            defined, all write operations are disabled for security.
+     */
+    match /projects/{projectId} {
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // --------------------------------------------------------------------------
+    // Collection: leads
+    // --------------------------------------------------------------------------
+    /**
+     * @description A secure "dropbox" for lead capture. Anyone can submit a new
+     *              lead, but no one can read, update, or delete any lead data.
+     * @path /leads/{leadId}
+     * @allow (create) An anonymous visitor submitting the contact form.
+     * @deny (get) Any user trying to read the data of a submitted lead.
+     * @principle Enforces a write-only pattern to protect sensitive user-submitted data.
+     */
+    match /leads/{leadId} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if true;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // --------------------------------------------------------------------------
+    // Collection: testimonials
+    // --------------------------------------------------------------------------
+    /**
+     * @description Public client testimonials. Anyone can view them. No one can
+     *              modify them from the client.
+     * @path /testimonials/{testimonialId}
+     * @allow (list) Any user, signed in or not, listing all testimonials.
+     * @deny (update) Any user attempting to change an existing testimonial.
+     * @principle Public Read with Admin-Only Writes. Since no admin role is
+     *            defined, all write operations are disabled for security.
+     */
+    match /testimonials/{testimonialId} {
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // --------------------------------------------------------------------------
+    // Collection: blogPosts
+    // --------------------------------------------------------------------------
+    /**
+     * @description Public blog posts. Anyone can view them. No one can
+     *              modify them from the client.
+     * @path /blogPosts/{blogPostId}
+     * @allow (get) Any user, signed in or not, reading a blog post.
+     * @deny (delete) Any user attempting to delete a blog post.
+     * @principle Public Read with Admin-Only Writes. Since no admin role is
+     *            defined, all write operations are disabled for security.
+     */
+    match /blogPosts/{blogPostId} {
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%; /* White */
+    --foreground: 222 47% 11%; /* Dark Blue for text */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 91% 60%; /* Bright Blue */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 216 50% 95%; /* Very Light Blue-Gray for section backgrounds */
+    --secondary-foreground: 222 47% 11%;
+    --muted: 215 39% 95%;
+    --muted-foreground: 215 14% 43%;
+    --accent: 217 91% 60%; /* Vibrant Blue for CTAs (was Orange) */
+    --accent-foreground: 0 0% 98%; /* White text on accent */
+    --destructive: 0 84% 60%; /* Red for details/errors */
+    --destructive-foreground: 0 0% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 60%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 218 10% 65%;
+    --accent: 217 91% 60%; 
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground overflow-x-hidden;
+  }
+}
+
+@keyframes line-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pulse-icon {
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.line-draw {
+  animation: line-draw 1s ease-out forwards;
+}
+
+.line-1 {
+  animation-delay: 0.7s;
+}
+
+.line-2 {
+  animation-delay: 1.9s;
+}
+
+.step-2-pulse {
+  animation: pulse-icon 0.4s ease-in-out forwards;
+  animation-delay: 1.7s;
+}
+
+.step-3-pulse {
+  animation: pulse-icon 0.4s ease-in-out forwards;
+  animation-delay: 2.9s;
+}
