@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relatórios | Admin Top Marketing BH</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+<div class="admin-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="admin-main">
+    <div id="topbar-placeholder"></div>
+    <div class="admin-content">
+
+      <!-- Period Filter -->
+      <div style="display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="setPeriod(7)">7 dias</button>
+        <button class="btn btn-primary btn-sm" id="btn-30d" onclick="setPeriod(30)">30 dias</button>
+        <button class="btn btn-secondary btn-sm" onclick="setPeriodThisMonth()">Este mês</button>
+        <button class="btn btn-secondary btn-sm" onclick="setPeriodLastMonth()">Mês anterior</button>
+        <button class="btn btn-secondary btn-sm" onclick="setPeriod(36500)">Tudo</button>
+      </div>
+
+      <!-- Charts Grid -->
+      <div class="chart-grid">
+        <div class="chart-box">
+          <div class="chart-box-title">Leads por Origem</div>
+          <canvas id="chart-origem"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-box-title">Leads por Serviço</div>
+          <canvas id="chart-servico"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-grid" style="margin-top:16px;">
+        <div class="chart-box">
+          <div class="chart-box-title">Leads por Faixa de Investimento</div>
+          <canvas id="chart-invest"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-box-title">Receita por Origem</div>
+          <canvas id="chart-receita"></canvas>
+        </div>
+      </div>
+
+      <!-- Table: Qualified Leads -->
+      <div class="table-box" style="margin-top:16px;">
+        <div class="table-header"><span class="table-header-title">Leads Qualificados no Período</span></div>
+        <div id="qualified-table"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/admin/js/admin.js?v=2"></script>
+<script>
+let charts = {};
+let periodSince = null;
+
+(async () => {
+  const session = await requireAuth();
+  if (!session) return;
+  injectSidebar('relatorios');
+  document.getElementById('page-title').textContent = 'Relatórios';
+  await setPeriod(30);
+})();
+
+async function setPeriod(days) {
+  document.querySelectorAll('.admin-content > div > button').forEach(b => b.className = 'btn btn-secondary btn-sm');
+  periodSince = new Date(Date.now() - days * 86400000).toISOString();
+  await loadReports();
+}
+
+async function setPeriodThisMonth() {
+  const now = new Date();
+  periodSince = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  await loadReports();
+}
+
+async function setPeriodLastMonth() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  periodSince = start.toISOString();
+  await loadReports();
+}
+
+async function loadReports() {
+  let q = supabase.from('leads').select('*');
+  if (periodSince) q = q.gte('created_at', periodSince);
+  const { data } = await q;
+  const leads = data || [];
+
+  renderBarChart('chart-origem', groupBy(leads, detectOrigem), 'Origem');
+  renderBarChart('chart-servico', groupBy(leads, l => l.servicos || 'Não informado'), 'Serviço');
+  renderBarChart('chart-invest', groupBy(leads, l => l.orcamento_anuncios || 'Não informado'), 'Investimento');
+
+  // Receita por origem (clientes)
+  const clientes = leads.filter(l => l.status === 'cliente');
+  const receitaByOrigem = {};
+  clientes.forEach(l => {
+    const orig = detectOrigem(l);
+    receitaByOrigem[orig] = (receitaByOrigem[orig] || 0) + (parseFloat(l.valor_venda) || 0);
+  });
+  renderBarChart('chart-receita', receitaByOrigem, 'Receita (R$)');
+
+  // Qualified table
+  const qualified = leads.filter(l => ['qualificado','reuniao','proposta','cliente'].includes(l.status));
+  document.getElementById('qualified-table').innerHTML = qualified.length === 0
+    ? `<div class="empty-state"><div class="empty-state-title">Nenhum lead qualificado no período</div></div>`
+    : `<table><thead><tr><th>Nome</th><th>Empresa</th><th>Serviço</th><th>Origem</th><th>Status</th><th>Qualificado em</th><th>Valor</th></tr></thead><tbody>
+      ${qualified.map(l => `<tr>
+        <td class="td-name">${l.nome}</td>
+        <td>${l.empresa || '—'}</td>
+        <td>${l.servicos || '—'}</td>
+        <td>${detectOrigem(l)}</td>
+        <td>${statusBadge(l.status)}</td>
+        <td>${fmtDateShort(l.qualified_at)}</td>
+        <td>${fmtCurrency(l.valor_venda)}</td>
+      </tr>`).join('')}
+      </tbody></table>`;
+}
+
+function groupBy(arr, fn) {
+  const counts = {};
+  arr.forEach(item => {
+    const key = typeof fn === 'function' ? fn(item) : item[fn];
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return counts;
+}
+
+function renderBarChart(canvasId, data, label) {
+  if (charts[canvasId]) charts[canvasId].destroy();
+  const labels = Object.keys(data);
+  const values = Object.values(data);
+  const colors = ['#3b82f6','#16a34a','#7c3aed','#d97706','#ef4444','#94a3b8','#0ea5e9','#f59e0b'];
+  charts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label, data: values, backgroundColor: colors.slice(0, labels.length), borderRadius: 6 }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+  });
+}
+</script>
+</body>
+</html>

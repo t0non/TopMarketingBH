@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ao Vivo | Admin Top Marketing BH</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+<div class="admin-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="admin-main">
+    <div id="topbar-placeholder"></div>
+    <div class="admin-content">
+
+      <!-- Live Header -->
+      <div class="live-header-bar">
+        <div class="live-badge-container">
+          <span class="live-badge"><span class="live-dot-pulse"></span> AO VIVO</span>
+          <span style="margin-left:12px;font-size:12px;color:var(--gray-400);">Atualização automática em tempo real</span>
+        </div>
+        <div class="live-stats-row" id="live-stats-row">
+          <div class="live-stat-card stat-active">
+            <span class="live-stat-number" id="stat-active">0</span>
+            <span class="live-stat-label">Preenchendo Agora</span>
+          </div>
+          <div class="live-stat-card stat-abandoned">
+            <span class="live-stat-number" id="stat-abandoned">0</span>
+            <span class="live-stat-label">Abandonaram Hoje</span>
+          </div>
+          <div class="live-stat-card stat-completed">
+            <span class="live-stat-number" id="stat-completed">0</span>
+            <span class="live-stat-label">Completaram Hoje</span>
+          </div>
+          <div class="live-stat-card">
+            <span class="live-stat-number" id="stat-rate">0%</span>
+            <span class="live-stat-label">Taxa de Conclusão</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions Table -->
+      <div class="table-box">
+        <div class="table-header">
+          <span class="table-header-title">Sessões do Formulário</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" id="btn-f-all" onclick="setFilter('all')">Todas</button>
+            <button class="btn btn-secondary btn-sm" id="btn-f-em_progresso" onclick="setFilter('em_progresso')">🟢 Ativas</button>
+            <button class="btn btn-secondary btn-sm" id="btn-f-abandonado" onclick="setFilter('abandonado')">🟡 Abandonadas</button>
+            <button class="btn btn-secondary btn-sm" id="btn-f-preenchido" onclick="setFilter('preenchido')">✅ Completas</button>
+          </div>
+        </div>
+        <div id="sessions-content">
+          <div style="padding:32px;text-align:center;">
+            <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+            <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+            <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Session Detail Drawer -->
+<div class="modal-overlay" id="session-modal" onclick="closeSessionDrawer(event)">
+  <div class="modal-drawer" id="session-drawer">
+    <div class="modal-header">
+      <span class="modal-title" id="session-drawer-title">Detalhes da Sessão</span>
+      <button class="btn btn-icon btn-sm" onclick="closeSessionDrawerForce()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="session-drawer-body">
+      <div style="padding:32px;text-align:center;color:var(--gray-400);">Carregando...</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/admin/js/admin.js?v=3"></script>
+<script>
+var currentFilter = 'all';
+var allSessions = [];
+var realtimeChannel = null;
+
+var STEP_NAMES = ['Início', 'Nome', 'WhatsApp', 'Objetivo', 'Serviço', 'Investimento', 'Prazo', 'Empresa'];
+
+(async function() {
+  var session = await requireAuth();
+  if (!session) return;
+  injectSidebar('sessoes');
+  document.getElementById('page-title').textContent = 'Ao Vivo';
+
+  // Cleanup: marcar sessões paradas há +10min como abandonadas
+  await cleanupStaleSessions();
+
+  // Carregar dados
+  await loadSessions();
+
+  // Inscrever para atualizações em tempo real
+  subscribeRealtime();
+})();
+
+async function cleanupStaleSessions() {
+  try {
+    var tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    await supabase.from('form_sessions')
+      .update({ status: 'abandonado', abandoned_at: new Date().toISOString() })
+      .eq('status', 'em_progresso')
+      .lt('updated_at', tenMinAgo);
+  } catch(e) { console.warn('[Cleanup]', e); }
+}
+
+async function loadSessions() {
+  var since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    var result = await supabase.from('form_sessions')
+      .select('*')
+      .gte('started_at', since)
+      .order('updated_at', { ascending: false })
+      .limit(200);
+
+    if (result.error) throw result.error;
+    allSessions = result.data || [];
+  } catch(e) {
+    console.error('[Sessions]', e);
+    document.getElementById('sessions-content').innerHTML =
+      '<div class="empty-state"><div class="empty-state-title">Erro ao carregar sessões</div><div class="empty-state-sub">Execute a migration form_sessions_migration.sql no Supabase SQL Editor.</div></div>';
+    return;
+  }
+
+  renderSessions();
+  updateStats();
+}
+
+function subscribeRealtime() {
+  try {
+    realtimeChannel = supabase.channel('sessions_live')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'form_sessions'
+      }, function(payload) {
+        handleRealtimeEvent(payload);
+      })
+      .subscribe();
+  } catch(e) {
+    console.warn('[Realtime] Falha ao inscrever:', e);
+  }
+}
+
+function handleRealtimeEvent(payload) {
+  var eventType = payload.eventType;
+  var newRow = payload.new;
+  var oldRow = payload.old;
+
+  if (eventType === 'INSERT') {
+    allSessions.unshift(newRow);
+    showToast('🟢 Nova sessão: ' + (newRow.nome || 'Visitante'), 'info');
+  } else if (eventType === 'UPDATE') {
+    var idx = -1;
+    for (var i = 0; i < allSessions.length; i++) {
+      if (allSessions[i].session_id === newRow.session_id) { idx = i; break; }
+    }
+    if (idx >= 0) {
+      allSessions[idx] = newRow;
+    } else {
+      allSessions.unshift(newRow);
+    }
+
+    // Notificar mudanças de status
+    if (oldRow && oldRow.status !== newRow.status) {
+      if (newRow.status === 'preenchido') {
+        showToast('✅ ' + (newRow.nome || 'Visitante') + ' completou o formulário!', 'success');
+      } else if (newRow.status === 'abandonado' && newRow.max_step > 0) {
+        showToast('🟡 ' + (newRow.nome || 'Visitante') + ' abandonou no passo ' + newRow.max_step, 'info');
+      }
+    }
+  }
+
+  // Re-ordenar por updated_at
+  allSessions.sort(function(a, b) {
+    return new Date(b.updated_at) - new Date(a.updated_at);
+  });
+
+  renderSessions();
+  updateStats();
+}
+
+function updateStats() {
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var todayISO = today.toISOString();
+
+  var todaySessions = allSessions.filter(function(s) { return s.started_at >= todayISO; });
+  var active = allSessions.filter(function(s) { return s.status === 'em_progresso'; }).length;
+  var abandoned = todaySessions.filter(function(s) { return s.status === 'abandonado'; }).length;
+  var completed = todaySessions.filter(function(s) { return s.status === 'preenchido'; }).length;
+  var total = abandoned + completed;
+  var rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  document.getElementById('stat-active').textContent = active;
+  document.getElementById('stat-abandoned').textContent = abandoned;
+  document.getElementById('stat-completed').textContent = completed;
+  document.getElementById('stat-rate').textContent = rate + '%';
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  ['all', 'em_progresso', 'abandonado', 'preenchido'].forEach(function(f) {
+    var btn = document.getElementById('btn-f-' + f);
+    if (btn) btn.className = f === filter ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderSessions();
+}
+
+function renderSessions() {
+  var filtered = currentFilter === 'all'
+    ? allSessions
+    : allSessions.filter(function(s) { return s.status === currentFilter; });
+
+  if (filtered.length === 0) {
+    document.getElementById('sessions-content').innerHTML =
+      '<div class="empty-state">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin:0 auto 12px;opacity:0.4;">' +
+          '<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49"/>' +
+        '</svg>' +
+        '<div class="empty-state-title">Nenhuma sessão' + (currentFilter !== 'all' ? ' com este filtro' : '') + '</div>' +
+        '<div class="empty-state-sub">As sessões do formulário aparecerão aqui em tempo real</div>' +
+      '</div>';
+    return;
+  }
+
+  var rows = filtered.map(function(s) { return renderSessionRow(s); }).join('');
+
+  document.getElementById('sessions-content').innerHTML =
+    '<table>' +
+      '<thead><tr>' +
+        '<th>Status</th>' +
+        '<th>Visitante</th>' +
+        '<th>Progresso</th>' +
+        '<th>Último Step</th>' +
+        '<th>Device</th>' +
+        '<th>Última Atividade</th>' +
+        '<th>Origem</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+    '</table>';
+}
+
+function renderSessionRow(s) {
+  var pct = Math.round((s.max_step / 7) * 100);
+  var stepName = STEP_NAMES[s.current_step] || 'Step ' + s.current_step;
+  var timeAgo = getTimeAgo(s.updated_at);
+  var device = s.device === 'mobile' ? '📱 Mobile' : '💻 Desktop';
+  var origem = s.gclid ? 'Google Ads' : (s.utm_source || 'Direto');
+
+  var statusBadgeHtml;
+  if (s.status === 'em_progresso') {
+    statusBadgeHtml = '<span class="badge badge-live"><span class="live-dot-mini"></span> Ativo</span>';
+  } else if (s.status === 'abandonado') {
+    statusBadgeHtml = '<span class="badge badge-abandonado">Abandonou</span>';
+  } else {
+    statusBadgeHtml = '<span class="badge badge-preenchido">✓ Completo</span>';
+  }
+
+  return '<tr class="session-row ' + (s.status === 'em_progresso' ? 'row-active' : '') + '" style="cursor:pointer;" onclick="openSessionDrawer(\'' + s.session_id + '\')">' +
+    '<td>' + statusBadgeHtml + '</td>' +
+    '<td>' +
+      '<div class="td-name">' + (s.nome || 'Visitante anônimo') + '</div>' +
+      '<div class="td-sub">' + (s.whatsapp || '—') + '</div>' +
+    '</td>' +
+    '<td>' +
+      '<div class="progress-bar-mini"><div class="progress-fill-mini ' + s.status + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="td-sub">' + pct + '% (' + s.max_step + '/7)</div>' +
+    '</td>' +
+    '<td>' + stepName + '</td>' +
+    '<td style="text-align:center;font-size:12px;">' + device + '</td>' +
+    '<td>' +
+      '<div style="font-weight:500;">' + timeAgo + '</div>' +
+      '<div class="td-sub">' + fmtDate(s.updated_at) + '</div>' +
+    '</td>' +
+    '<td><div class="td-sub" style="color:var(--gray-700);">' + origem + '</div></td>' +
+  '</tr>';
+}
+
+function getTimeAgo(iso) {
+  if (!iso) return '—';
+  var diff = Date.now() - new Date(iso).getTime();
+  var secs = Math.floor(diff / 1000);
+  if (secs < 10) return 'agora mesmo';
+  if (secs < 60) return secs + 's atrás';
+  var mins = Math.floor(secs / 60);
+  if (mins < 60) return mins + ' min atrás';
+  var hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + 'h atrás';
+  return Math.floor(hours / 24) + 'd atrás';
+}
+
+// ─── Session Drawer ───────────────────────────────────
+function openSessionDrawer(sessionId) {
+  document.getElementById('session-modal').classList.add('open');
+  var s = null;
+  for (var i = 0; i < allSessions.length; i++) {
+    if (allSessions[i].session_id === sessionId) { s = allSessions[i]; break; }
+  }
+  if (!s) {
+    document.getElementById('session-drawer-body').innerHTML = '<div class="empty-state"><div class="empty-state-title">Sessão não encontrada</div></div>';
+    return;
+  }
+
+  document.getElementById('session-drawer-title').textContent = s.nome || 'Visitante anônimo';
+
+  var pct = Math.round((s.max_step / 7) * 100);
+  var statusLabel = s.status === 'em_progresso' ? '🟢 Preenchendo agora' : (s.status === 'abandonado' ? '🟡 Abandonou o formulário' : '✅ Formulário completo');
+
+  // Build step progress visual
+  var stepsHtml = '';
+  for (var step = 1; step <= 7; step++) {
+    var filled = step <= s.max_step;
+    var current = step === s.current_step && s.status === 'em_progresso';
+    var cls = filled ? 'step-done' : 'step-pending';
+    if (current) cls = 'step-current';
+    stepsHtml += '<div class="session-step ' + cls + '">' +
+      '<span class="session-step-num">' + step + '</span>' +
+      '<span class="session-step-name">' + STEP_NAMES[step] + '</span>' +
+      '<span class="session-step-value">' + getStepValue(s, step) + '</span>' +
+    '</div>';
+  }
+
+  document.getElementById('session-drawer-body').innerHTML =
+    '<div class="detail-section">' +
+      '<div class="detail-section-title">Status</div>' +
+      '<div style="font-size:16px;font-weight:700;margin-bottom:12px;">' + statusLabel + '</div>' +
+      '<div class="progress-bar-mini" style="height:8px;margin-bottom:8px;"><div class="progress-fill-mini ' + s.status + '" style="width:' + pct + '%"></div></div>' +
+      '<div style="font-size:12px;color:var(--gray-400);">' + pct + '% completo (' + s.max_step + ' de 7 passos)</div>' +
+    '</div>' +
+
+    '<div class="detail-section">' +
+      '<div class="detail-section-title">Progresso dos Passos</div>' +
+      '<div class="session-steps-list">' + stepsHtml + '</div>' +
+    '</div>' +
+
+    '<div class="detail-section">' +
+      '<div class="detail-section-title">Informações</div>' +
+      '<div class="detail-grid">' +
+        '<div class="detail-field"><label>Device</label><span>' + (s.device === 'mobile' ? '📱 Mobile' : '💻 Desktop') + '</span></div>' +
+        '<div class="detail-field"><label>Origem</label><span>' + (s.gclid ? 'Google Ads' : (s.utm_source || 'Direto')) + '</span></div>' +
+        '<div class="detail-field"><label>Campanha</label><span>' + (s.utm_campaign || '—') + '</span></div>' +
+        '<div class="detail-field"><label>Iniciou</label><span>' + fmtDate(s.started_at) + '</span></div>' +
+        '<div class="detail-field"><label>Última atividade</label><span>' + fmtDate(s.updated_at) + '</span></div>' +
+        '<div class="detail-field"><label>' + (s.status === 'abandonado' ? 'Abandonou em' : (s.status === 'preenchido' ? 'Completou em' : 'Ativo desde')) + '</label><span>' + fmtDate(s.abandoned_at || s.completed_at || s.started_at) + '</span></div>' +
+      '</div>' +
+    '</div>' +
+
+    (s.whatsapp && s.status === 'abandonado' ?
+      '<div class="detail-section">' +
+        '<div class="detail-section-title">Recuperação</div>' +
+        '<p style="font-size:13px;color:var(--gray-600);margin-bottom:12px;">Este visitante abandonou o formulário mas deixou o WhatsApp. Você pode tentar recuperar!</p>' +
+        '<a href="' + buildWhatsAppUrl(s.whatsapp, s.nome || 'Visitante') + '" target="_blank" class="btn btn-green" style="width:100%;">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.12 1.524 5.855L.057 24l6.305-1.654A11.954 11.954 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.6a9.6 9.6 0 0 1-4.898-1.341l-.352-.208-3.643.956.973-3.554-.228-.365A9.6 9.6 0 0 1 2.4 12c0-5.295 4.305-9.6 9.6-9.6s9.6 4.305 9.6 9.6-4.305 9.6-9.6 9.6z"/></svg>' +
+          ' Recuperar via WhatsApp' +
+        '</a>' +
+      '</div>' : ''
+    );
+}
+
+function getStepValue(s, step) {
+  var vals = {
+    1: s.nome,
+    2: s.whatsapp,
+    3: s.objetivo,
+    4: s.servico,
+    5: s.investimento,
+    6: s.prazo,
+    7: s.empresa
+  };
+  return vals[step] || '—';
+}
+
+function closeSessionDrawer(e) {
+  if (e.target === document.getElementById('session-modal')) closeSessionDrawerForce();
+}
+function closeSessionDrawerForce() {
+  document.getElementById('session-modal').classList.remove('open');
+}
+</script>
+</body>
+</html>

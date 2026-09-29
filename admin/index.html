@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard | Admin Top Marketing BH</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+<div class="admin-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="admin-main">
+    <div id="topbar-placeholder"></div>
+    <div class="admin-content">
+
+      <!-- Metric Cards -->
+      <div class="metric-grid" id="metrics-grid">
+        <div class="metric-card"><div class="skeleton" style="height:12px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div></div>
+        <div class="metric-card"><div class="skeleton" style="height:12px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div></div>
+        <div class="metric-card"><div class="skeleton" style="height:12px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div></div>
+        <div class="metric-card"><div class="skeleton" style="height:12px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div></div>
+        <div class="metric-card"><div class="skeleton" style="height:12px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div></div>
+        <div class="metric-card"><div class="skeleton" style="height:12px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div></div>
+      </div>
+
+      <!-- Charts -->
+      <div class="chart-grid">
+        <div class="chart-box">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <span class="chart-box-title" style="margin:0">Leads por Período</span>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-secondary btn-sm" id="btn-7d" onclick="loadChart(7)">7d</button>
+              <button class="btn btn-primary btn-sm" id="btn-30d" onclick="loadChart(30)">30d</button>
+            </div>
+          </div>
+          <canvas id="chart-leads"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-box-title">Leads por Origem</div>
+          <canvas id="chart-origem"></canvas>
+        </div>
+      </div>
+
+      <!-- Funnel + Recent Leads -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="funnel-box">
+          <div class="funnel-title">Funil Comercial</div>
+          <div id="funnel-content">
+            <div class="funnel-step"><div class="skeleton" style="width:100%;height:20px;"></div></div>
+            <div class="funnel-step"><div class="skeleton" style="width:100%;height:20px;"></div></div>
+            <div class="funnel-step"><div class="skeleton" style="width:100%;height:20px;"></div></div>
+            <div class="funnel-step"><div class="skeleton" style="width:100%;height:20px;"></div></div>
+            <div class="funnel-step"><div class="skeleton" style="width:100%;height:20px;"></div></div>
+            <div class="funnel-step"><div class="skeleton" style="width:100%;height:20px;"></div></div>
+          </div>
+        </div>
+
+        <div class="table-box">
+          <div class="table-header">
+            <span class="table-header-title">Últimos Leads</span>
+            <a href="/admin/leads.html" class="btn btn-secondary btn-sm">Ver todos</a>
+          </div>
+          <div id="recent-leads-content">
+            <div style="padding:24px;"><div class="skeleton" style="height:16px;margin-bottom:8px;"></div><div class="skeleton" style="height:16px;width:80%;"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feed ao Vivo -->
+      <div class="table-box" style="margin-top:16px;">
+        <div class="table-header">
+          <span class="table-header-title" style="display:flex;align-items:center;gap:8px;">
+            <span class="live-dot-mini"></span> Sessões ao Vivo
+          </span>
+          <a href="/admin/sessoes" class="btn btn-secondary btn-sm">Ver todas →</a>
+        </div>
+        <div id="live-feed-content" class="live-feed-mini">
+          <div style="padding:24px;"><div class="skeleton" style="height:16px;margin-bottom:8px;"></div><div class="skeleton" style="height:16px;width:80%;"></div></div>
+        </div>
+      </div>
+
+      <!-- Auth/Error Banner -->
+      <div id="auth-banner" style="display:none;margin-top:20px;background:#fef3c7;border:1px solid #d97706;border-radius:10px;padding:16px 20px;">
+        <strong style="color:#92400e;">⚠️ Sessão não encontrada</strong>
+        <p style="color:#78350f;margin:6px 0 10px;font-size:13px;">Você precisa estar logado para ver os dados. O banco retornou vazio — isso indica que a sessão expirou ou você ainda não fez login.</p>
+        <a href="/admin/login.html" class="btn btn-primary btn-sm">Fazer Login</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/admin/js/admin.js?v=2"></script>
+<script>
+let chartLeads, chartOrigem;
+let isAuthenticated = false;
+
+(async () => {
+  // Check auth first
+  const session = await requireAuth();
+  if (!session) {
+    // requireAuth already redirects, but show banner as fallback
+    document.getElementById('auth-banner').style.display = 'block';
+    renderEmptyState();
+    return;
+  }
+
+  isAuthenticated = true;
+  injectSidebar('dashboard');
+  document.getElementById('page-title').textContent = 'Dashboard';
+
+  // Load all data
+  try {
+    await Promise.all([
+      loadMetrics(),
+      loadFunnel(),
+      loadRecentLeads(),
+      loadChart(30),
+      loadOrigemChart(),
+      loadLiveFeed()
+    ]);
+  } catch (err) {
+    console.error('Erro ao carregar dashboard:', err);
+    document.getElementById('auth-banner').style.display = 'block';
+  }
+})();
+
+function renderEmptyState() {
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric-card blue"><div class="metric-label">Novos Leads</div><div class="metric-value">—</div></div>
+    <div class="metric-card"><div class="metric-label">Este Mês</div><div class="metric-value">—</div></div>
+    <div class="metric-card green"><div class="metric-label">Qualificados</div><div class="metric-value">—</div></div>
+    <div class="metric-card purple"><div class="metric-label">Reuniões</div><div class="metric-value">—</div></div>
+    <div class="metric-card green"><div class="metric-label">Clientes</div><div class="metric-value">—</div></div>
+    <div class="metric-card yellow"><div class="metric-label">Receita</div><div class="metric-value">—</div></div>
+  `;
+  document.getElementById('funnel-content').innerHTML = `<div style="padding:16px;color:var(--gray-400);font-size:13px;">Faça login para ver o funil.</div>`;
+  document.getElementById('recent-leads-content').innerHTML = `<div style="padding:16px;color:var(--gray-400);font-size:13px;">Faça login para ver os leads.</div>`;
+}
+
+async function loadMetrics() {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const { data: allData, error: e1 } = await supabase.from('leads').select('status, valor_venda');
+  const { count: monthCount, error: e2 } = await supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', startOfMonth);
+
+  if (e1) { console.error('loadMetrics error:', e1); return; }
+
+  const all = allData || [];
+  const count = (s) => all.filter(l => l.status === s).length;
+  const receita = all.filter(l => l.status === 'cliente').reduce((s, l) => s + (parseFloat(l.valor_venda) || 0), 0);
+  const totalLeads = all.length;
+  const qualificados = count('qualificado');
+  const clientes = count('cliente');
+  const taxaQual = totalLeads > 0 ? Math.round((qualificados / totalLeads) * 100) : 0;
+  const taxaFech = qualificados > 0 ? Math.round((clientes / qualificados) * 100) : 0;
+
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric-card blue">
+      <div class="metric-label">Novos Leads</div>
+      <div class="metric-value">${count('novo')}</div>
+      <div class="metric-sub">aguardando contato</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Leads Este Mês</div>
+      <div class="metric-value">${monthCount || 0}</div>
+      <div class="metric-sub">${now.toLocaleString('pt-BR',{month:'long'})}</div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-label">Qualificados</div>
+      <div class="metric-value">${qualificados}</div>
+      <div class="metric-sub">taxa ${taxaQual}%</div>
+    </div>
+    <div class="metric-card purple">
+      <div class="metric-label">Reuniões</div>
+      <div class="metric-value">${count('reuniao')}</div>
+      <div class="metric-sub">${count('proposta')} propostas</div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-label">Clientes</div>
+      <div class="metric-value">${clientes}</div>
+      <div class="metric-sub">taxa fechamento ${taxaFech}%</div>
+    </div>
+    <div class="metric-card yellow">
+      <div class="metric-label">Receita</div>
+      <div class="metric-value" style="font-size:20px;">${fmtCurrency(receita)}</div>
+      <div class="metric-sub">ticket médio ${clientes > 0 ? fmtCurrency(receita / clientes) : '—'}</div>
+    </div>
+  `;
+}
+
+async function loadFunnel() {
+  const { data, error } = await supabase.from('leads').select('status');
+  if (error) { console.error('loadFunnel error:', error); return; }
+
+  const all = data || [];
+  const total = all.length;
+  const steps = [
+    { key: 'novo',        label: 'Novo',        color: '#94a3b8' },
+    { key: 'contato',     label: 'Contato',      color: '#3b82f6' },
+    { key: 'qualificado', label: 'Qualificado',  color: '#16a34a' },
+    { key: 'reuniao',     label: 'Reunião',      color: '#7c3aed' },
+    { key: 'proposta',    label: 'Proposta',     color: '#d97706' },
+    { key: 'cliente',     label: 'Cliente',      color: '#15803d' },
+  ];
+
+  if (total === 0) {
+    document.getElementById('funnel-content').innerHTML = '<div style="padding:16px;color:var(--gray-400);font-size:13px;">Nenhum lead no sistema ainda.</div>';
+    return;
+  }
+
+  document.getElementById('funnel-content').innerHTML = steps.map((s, i) => {
+    const cnt = all.filter(l => l.status === s.key).length;
+    const pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
+    const prevCnt = i > 0 ? all.filter(l => l.status === steps[i-1].key).length : null;
+    const convPct = prevCnt && prevCnt > 0 ? Math.round((cnt / prevCnt) * 100) : null;
+    return `
+      <div class="funnel-step">
+        <span class="funnel-dot" style="background:${s.color}"></span>
+        <span class="funnel-name">${s.label}</span>
+        <span class="funnel-count">${cnt}</span>
+        <span class="funnel-pct">${convPct !== null ? convPct + '%' : pct + '%'}</span>
+      </div>`;
+  }).join('');
+}
+
+async function loadRecentLeads() {
+  const { data, error } = await supabase.from('leads').select('lead_id, nome, servicos, status, created_at').order('created_at', { ascending: false }).limit(5);
+  if (error) { console.error('loadRecentLeads error:', error); return; }
+
+  if (!data || data.length === 0) {
+    document.getElementById('recent-leads-content').innerHTML = `<div class="empty-state"><div class="empty-state-title">Nenhum lead ainda</div><div class="empty-state-sub">Os leads enviados pelo formulário aparecerão aqui.</div></div>`;
+    return;
+  }
+
+  document.getElementById('recent-leads-content').innerHTML = `
+    <table>
+      <thead><tr><th>Nome</th><th>Serviço</th><th>Status</th></tr></thead>
+      <tbody>
+        ${data.map(l => `
+          <tr style="cursor:pointer" onclick="window.location.href='/admin/leads.html?id=${l.lead_id}'">
+            <td><div class="td-name">${l.nome}</div><div class="td-sub">${fmtDateShort(l.created_at)}</div></td>
+            <td>${l.servicos || '—'}</td>
+            <td>${statusBadge(l.status)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function loadChart(days) {
+  document.getElementById('btn-7d').className  = days === 7  ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary';
+  document.getElementById('btn-30d').className = days === 30 ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary';
+
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const { data, error } = await supabase.from('leads').select('created_at').gte('created_at', since);
+  if (error) { console.error('loadChart error:', error); return; }
+
+  const counts = {};
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    counts[d.toISOString().slice(0,10)] = 0;
+  }
+  (data || []).forEach(l => {
+    const day = l.created_at.slice(0,10);
+    if (counts[day] !== undefined) counts[day]++;
+  });
+
+  const labels = Object.keys(counts).map(d => d.slice(5));
+  const values = Object.values(counts);
+
+  if (chartLeads) chartLeads.destroy();
+  chartLeads = new Chart(document.getElementById('chart-leads'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Leads', data: values, backgroundColor: '#3b82f6', borderRadius: 6 }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+  });
+}
+
+async function loadOrigemChart() {
+  const { data, error } = await supabase.from('leads').select('utm_source, fbclid, gclid, referrer');
+  if (error) { console.error('loadOrigemChart error:', error); return; }
+
+  const orig = { 'Google Ads': 0, 'Meta Ads': 0, 'Orgânico': 0, 'Direto': 0, 'Outro': 0 };
+  (data || []).forEach(l => { orig[detectOrigem(l)] = (orig[detectOrigem(l)] || 0) + 1; });
+
+  const labels = Object.keys(orig).filter(k => orig[k] > 0);
+  const values = labels.map(k => orig[k]);
+
+  if (chartOrigem) chartOrigem.destroy();
+
+  if (values.length === 0) {
+    document.getElementById('chart-origem').parentElement.innerHTML += '<p style="text-align:center;color:var(--gray-400);font-size:13px;margin-top:8px;">Nenhum dado de origem ainda.</p>';
+    return;
+  }
+
+  chartOrigem = new Chart(document.getElementById('chart-origem'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: ['#3b82f6','#16a34a','#7c3aed','#94a3b8','#d97706'], borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } }
+    }
+  });
+}
+
+// ─── Feed ao Vivo ─────────────────────────────────────
+async function loadLiveFeed() {
+  try {
+    var since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    var result = await supabase.from('form_sessions')
+      .select('*')
+      .gte('started_at', since)
+      .order('updated_at', { ascending: false })
+      .limit(8);
+
+    if (result.error) throw result.error;
+    renderLiveFeed(result.data || []);
+
+    // Inscrever para atualizações em tempo real
+    supabase.channel('dashboard_live')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'form_sessions'
+      }, function() {
+        loadLiveFeed();
+      })
+      .subscribe();
+  } catch(e) {
+    console.warn('[LiveFeed]', e);
+    document.getElementById('live-feed-content').innerHTML =
+      '<div style="padding:16px;color:var(--gray-400);font-size:13px;">Execute a migration <strong>form_sessions_migration.sql</strong> no Supabase para ativar.</div>';
+  }
+}
+
+function renderLiveFeed(sessions) {
+  if (sessions.length === 0) {
+    document.getElementById('live-feed-content').innerHTML =
+      '<div style="padding:20px;text-align:center;color:var(--gray-400);font-size:13px;">Nenhuma sessão recente. As sessões aparecerão aqui quando alguém abrir o formulário.</div>';
+    return;
+  }
+
+  var stepNames = ['Início', 'Nome', 'WhatsApp', 'Objetivo', 'Serviço', 'Investimento', 'Prazo', 'Empresa'];
+
+  document.getElementById('live-feed-content').innerHTML = sessions.map(function(s) {
+    var pct = Math.round((s.max_step / 7) * 100);
+    var stepName = stepNames[s.current_step] || 'Step ' + s.current_step;
+    var diff = Date.now() - new Date(s.updated_at).getTime();
+    var mins = Math.floor(diff / 60000);
+    var timeAgo = mins < 1 ? 'agora' : (mins < 60 ? mins + ' min' : Math.floor(mins / 60) + 'h');
+    var device = s.device === 'mobile' ? '📱' : '💻';
+
+    var icon, statusClass;
+    if (s.status === 'em_progresso') {
+      icon = '<span class="live-dot-mini"></span>';
+      statusClass = 'feed-active';
+    } else if (s.status === 'abandonado') {
+      icon = '🟡';
+      statusClass = 'feed-abandoned';
+    } else {
+      icon = '✅';
+      statusClass = 'feed-completed';
+    }
+
+    return '<div class="live-feed-item ' + statusClass + '">' +
+      '<div style="flex-shrink:0;">' + icon + '</div>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div class="td-name" style="font-size:13px;">' + (s.nome || 'Visitante') + '</div>' +
+        '<div class="td-sub">Step ' + s.current_step + '/7 · ' + stepName + ' · ' + device + ' · ' + timeAgo + '</div>' +
+      '</div>' +
+      '<div style="width:60px;">' +
+        '<div class="progress-bar-mini"><div class="progress-fill-mini ' + s.status + '" style="width:' + pct + '%"></div></div>' +
+        '<div class="td-sub" style="text-align:center;">' + pct + '%</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+</script>
+</body>
+</html>

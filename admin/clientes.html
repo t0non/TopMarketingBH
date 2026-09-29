@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clientes | Admin Top Marketing BH</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+<div class="admin-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="admin-main">
+    <div id="topbar-placeholder"></div>
+    <div class="admin-content">
+
+      <!-- Summary Cards -->
+      <div class="metric-grid" id="clients-metrics" style="grid-template-columns:repeat(3,1fr);max-width:600px;">
+        <div class="metric-card green skeleton-box"><div class="skeleton" style="height:12px;width:70%;margin-bottom:10px;"></div><div class="skeleton" style="height:28px;width:40%;"></div></div>
+        <div class="metric-card skeleton-box"><div class="skeleton" style="height:12px;width:70%;margin-bottom:10px;"></div><div class="skeleton" style="height:28px;width:40%;"></div></div>
+        <div class="metric-card skeleton-box"><div class="skeleton" style="height:12px;width:70%;margin-bottom:10px;"></div><div class="skeleton" style="height:28px;width:40%;"></div></div>
+      </div>
+
+      <!-- Clients Table -->
+      <div class="table-box">
+        <div class="table-header">
+          <span class="table-header-title">Clientes Registrados</span>
+        </div>
+        <div id="clients-table"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/admin/js/admin.js?v=2"></script>
+<script>
+(async () => {
+  const session = await requireAuth();
+  if (!session) return;
+  injectSidebar('clientes');
+  document.getElementById('page-title').textContent = 'Clientes';
+  await loadClients();
+})();
+
+async function loadClients() {
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('status', 'cliente')
+    .order('closed_at', { ascending: false });
+
+  if (error) {
+    document.getElementById('clients-table').innerHTML = `<div class="empty-state"><div class="empty-state-title">Erro ao carregar</div></div>`;
+    return;
+  }
+
+  const clients = data || [];
+  const totalReceita = clients.reduce((s, c) => s + (parseFloat(c.valor_venda) || 0), 0);
+  const ticket = clients.length > 0 ? totalReceita / clients.length : 0;
+
+  document.getElementById('clients-metrics').innerHTML = `
+    <div class="metric-card green">
+      <div class="metric-label">Clientes Ativos</div>
+      <div class="metric-value">${clients.length}</div>
+      <div class="metric-sub">registrados no sistema</div>
+    </div>
+    <div class="metric-card yellow">
+      <div class="metric-label">Receita Total</div>
+      <div class="metric-value" style="font-size:18px;">${fmtCurrency(totalReceita)}</div>
+      <div class="metric-sub">MRR registrado</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Ticket Médio</div>
+      <div class="metric-value" style="font-size:18px;">${fmtCurrency(ticket)}</div>
+      <div class="metric-sub">por cliente</div>
+    </div>
+  `;
+
+  if (clients.length === 0) {
+    document.getElementById('clients-table').innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <div class="empty-state-title">Nenhum cliente registrado ainda</div>
+        <div class="empty-state-sub">Quando um lead for marcado como Cliente, aparecerá aqui.</div>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('clients-table').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Cliente</th>
+          <th>Empresa</th>
+          <th>Serviço</th>
+          <th>Origem</th>
+          <th>Fechamento</th>
+          <th>Valor</th>
+          <th>gclid</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${clients.map(c => `
+          <tr>
+            <td><div class="td-name">${c.nome}</div><div class="td-sub">${c.telefone || ''}</div></td>
+            <td>${c.empresa || '—'}</td>
+            <td>${c.servicos || '—'}</td>
+            <td>${detectOrigem(c)}</td>
+            <td>${fmtDateShort(c.closed_at)}</td>
+            <td><strong>${fmtCurrency(c.valor_venda)}</strong></td>
+            <td><span style="font-size:11px;color:var(--gray-400);">${c.gclid ? c.gclid.slice(0,12)+'...' : '—'}</span></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+</script>
+</body>
+</html>

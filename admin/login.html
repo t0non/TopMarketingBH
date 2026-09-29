@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | Admin Top Marketing BH</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="/formulario/logo.png" alt="Top Marketing BH"><br>
+        <div class="login-brand-title">Top Marketing BH</div>
+        <div class="login-brand-sub">Painel Administrativo</div>
+      </div>
+
+      <div class="login-error" id="login-error"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label">E-mail</label>
+          <input type="email" id="email" class="form-control" placeholder="admin@topmarketingbh.com.br" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Senha</label>
+          <input type="password" id="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;height:44px;font-size:15px;" id="login-btn">
+          Entrar
+        </button>
+      </form>
+
+      <p style="text-align:center;margin-top:20px;font-size:12px;color:var(--gray-400);">
+        Acesso restrito. Somente usuários autorizados.
+      </p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const SUPABASE_URL  = 'https://gycpwtlwehgwxqyrmbzt.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5Y3B3dGx3ZWhnd3hxeXJtYnp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2MjgwNTMsImV4cCI6MjEwNjIwNDA1M30.kq7O_qT9NnkSEtjZ8bXnsbU-7yf5wW4VwpwJ4H9lrnA';
+    var sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    // Redirect if already logged in
+    sbClient.auth.getSession().then(({ data: { session } }) => {
+      if (session) window.location.href = '/admin';
+    });
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('login-btn');
+      const errEl = document.getElementById('login-error');
+      errEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Entrando...';
+
+      const email    = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      const { error } = await sbClient.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        errEl.textContent = 'E-mail ou senha incorretos. Tente novamente.';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+      } else {
+        window.location.href = '/admin';
+      }
+    });
+  </script>
+</body>
+</html>

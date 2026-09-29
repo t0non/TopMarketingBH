@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leads | Admin Top Marketing BH</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+<div class="admin-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="admin-main">
+    <div id="topbar-placeholder"></div>
+    <div class="admin-content">
+
+      <div class="table-box">
+        <div class="table-header">
+          <span class="table-header-title">Todos os Leads</span>
+          <span id="leads-count" style="font-size:12px;color:var(--gray-400);">...</span>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters-row">
+          <input type="text" id="f-search" class="filter-input" placeholder="Buscar por nome, empresa, telefone..." oninput="debounceLoad()">
+          <select id="f-status" class="filter-select" onchange="loadLeads(1)">
+            <option value="">Todos os status</option>
+            <option value="novo">Novo</option>
+            <option value="contato">Contato</option>
+            <option value="qualificado">Qualificado</option>
+            <option value="reuniao">Reunião</option>
+            <option value="proposta">Proposta</option>
+            <option value="cliente">Cliente</option>
+            <option value="perdido">Perdido</option>
+            <option value="incompleto">Incompleto</option>
+          </select>
+          <select id="f-servico" class="filter-select" onchange="loadLeads(1)">
+            <option value="">Todos os serviços</option>
+            <option value="Google Ads">Google Ads</option>
+            <option value="Meta Ads">Meta Ads</option>
+            <option value="Site">Site / Landing Page</option>
+          </select>
+          <select id="f-investimento" class="filter-select" onchange="loadLeads(1)">
+            <option value="">Todos os investimentos</option>
+            <option value="R$500-1k">R$500 a R$1.000</option>
+            <option value="R$1k-2k">R$1.000 a R$2.000</option>
+            <option value="R$2k+">Mais de R$2.000</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Limpar filtros</button>
+        </div>
+
+        <!-- Table -->
+        <div id="leads-table-wrapper">
+          <div style="padding:32px;text-align:center;"><div class="skeleton" style="height:16px;margin-bottom:8px;"></div><div class="skeleton" style="height:16px;width:70%;margin:0 auto;"></div></div>
+        </div>
+
+        <div id="pagination-wrapper"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Lead Detail Drawer -->
+<div class="modal-overlay" id="lead-modal" onclick="closeDrawer(event)">
+  <div class="modal-drawer" id="lead-drawer">
+    <div class="modal-header">
+      <span class="modal-title" id="drawer-title">Detalhes do Lead</span>
+      <button class="btn btn-icon btn-sm" onclick="closeDrawerForce()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="drawer-body">
+      <div style="padding:32px;text-align:center;color:var(--gray-400);">Carregando...</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/admin/js/admin.js?v=2"></script>
+<script>
+const PER_PAGE = 25;
+let currentPage = 1;
+let totalCount = 0;
+let debounceTimer;
+let currentLeadId = null;
+
+(async () => {
+  const session = await requireAuth();
+  if (!session) return;
+  injectSidebar('leads');
+  document.getElementById('page-title').textContent = 'Leads';
+
+  // Check if ?id= in URL to open drawer directly
+  const urlId = new URLSearchParams(window.location.search).get('id');
+  if (urlId) openDrawer(urlId);
+
+  await loadLeads(1);
+})();
+
+function debounceLoad() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => loadLeads(1), 400);
+}
+
+function clearFilters() {
+  document.getElementById('f-search').value = '';
+  document.getElementById('f-status').value = '';
+  document.getElementById('f-servico').value = '';
+  document.getElementById('f-investimento').value = '';
+  loadLeads(1);
+}
+
+async function loadLeads(page = 1) {
+  currentPage = page;
+  const search = document.getElementById('f-search').value.trim();
+  const status = document.getElementById('f-status').value;
+  const servico = document.getElementById('f-servico').value;
+  const invest  = document.getElementById('f-investimento').value;
+
+  document.getElementById('leads-table-wrapper').innerHTML = `
+    <div style="padding:24px;">
+      <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+      <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+      <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+      <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+      <div class="skeleton" style="height:44px;margin-bottom:8px;"></div>
+    </div>`;
+
+  let q = supabase.from('leads').select('*', { count: 'exact' }).order('created_at', { ascending: false });
+
+  if (status) q = q.eq('status', status);
+  if (servico) q = q.ilike('servicos', `%${servico}%`);
+  if (invest)  q = q.eq('orcamento_anuncios', invest);
+  if (search) {
+    q = q.or(`nome.ilike.%${search}%,empresa.ilike.%${search}%,telefone.ilike.%${search}%`);
+  }
+
+  const from = (page - 1) * PER_PAGE;
+  q = q.range(from, from + PER_PAGE - 1);
+
+  const { data, count, error } = await q;
+  totalCount = count || 0;
+
+  document.getElementById('leads-count').textContent = `${totalCount} lead${totalCount !== 1 ? 's' : ''}`;
+
+  if (error) {
+    document.getElementById('leads-table-wrapper').innerHTML = `<div class="empty-state"><div class="empty-state-title">Erro ao carregar leads</div><div class="empty-state-sub">${error.message}</div></div>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    document.getElementById('leads-table-wrapper').innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <div class="empty-state-title">Nenhum lead encontrado</div>
+        <div class="empty-state-sub">Tente ajustar os filtros</div>
+      </div>`;
+    document.getElementById('pagination-wrapper').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('leads-table-wrapper').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Nome</th>
+          <th>Empresa</th>
+          <th>Serviço</th>
+          <th>Verba</th>
+          <th>Prazo</th>
+          <th>Origem</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.map(l => `
+          <tr style="cursor:pointer;" onclick="openDrawer('${l.lead_id}')">
+            <td><div style="white-space:nowrap">${fmtDateShort(l.created_at)}</div></td>
+            <td><div class="td-name">${l.nome}</div><div class="td-sub">${l.telefone || ''}</div></td>
+            <td>${l.empresa || '—'}</td>
+            <td>${l.servicos || '—'}</td>
+            <td>${l.orcamento_anuncios || '—'}</td>
+            <td>${l.prazo_inicio || '—'}</td>
+            <td>
+              <div>${detectOrigem(l)}</div>
+              ${l.utm_campaign ? `<div class="td-sub">${l.utm_campaign}</div>` : ''}
+            </td>
+            <td>${statusBadge(l.status)}</td>
+            <td onclick="event.stopPropagation()">
+              <a href="${buildWhatsAppUrl(l.telefone, l.nome)}" target="_blank" class="btn btn-green btn-sm" title="WhatsApp">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.12 1.524 5.855L.057 24l6.305-1.654A11.954 11.954 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.6a9.6 9.6 0 0 1-4.898-1.341l-.352-.208-3.643.956.973-3.554-.228-.365A9.6 9.6 0 0 1 2.4 12c0-5.295 4.305-9.6 9.6-9.6s9.6 4.305 9.6 9.6-4.305 9.6-9.6 9.6z"/></svg>
+              </a>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  document.getElementById('pagination-wrapper').innerHTML = buildPagination(currentPage, totalCount, PER_PAGE, 'loadLeads');
+}
+
+// ─── Drawer ───────────────────────────────────────────
+async function openDrawer(leadId) {
+  currentLeadId = leadId;
+  document.getElementById('lead-modal').classList.add('open');
+  document.getElementById('drawer-body').innerHTML = `<div style="padding:32px;text-align:center;color:var(--gray-400);">Carregando...</div>`;
+
+  const { data: lead, error } = await supabase.from('leads').select('*').eq('lead_id', leadId).single();
+  if (error || !lead) {
+    document.getElementById('drawer-body').innerHTML = `<div class="empty-state"><div class="empty-state-title">Lead não encontrado</div></div>`;
+    return;
+  }
+
+  const { data: history } = await supabase.from('lead_status_history')
+    .select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
+
+  document.getElementById('drawer-title').textContent = lead.nome;
+  document.getElementById('drawer-body').innerHTML = renderLeadDetail(lead, history || []);
+}
+
+function renderLeadDetail(lead, history) {
+  const origem = detectOrigem(lead);
+  return `
+    <!-- Dados Principais -->
+    <div class="detail-section">
+      <div class="detail-section-title">Dados do Lead</div>
+      <div class="detail-grid">
+        <div class="detail-field"><label>Nome</label><span>${lead.nome}</span></div>
+        <div class="detail-field"><label>WhatsApp</label><span>${lead.telefone || '—'}</span></div>
+        <div class="detail-field"><label>Empresa</label><span>${lead.empresa || '—'}</span></div>
+        <div class="detail-field"><label>Serviço</label><span>${lead.servicos || '—'}</span></div>
+        <div class="detail-field"><label>Objetivo</label><span>${lead.objetivo || '—'}</span></div>
+        <div class="detail-field"><label>Investimento</label><span>${lead.orcamento_anuncios || '—'}</span></div>
+        <div class="detail-field"><label>Quando começa</label><span>${lead.prazo_inicio || '—'}</span></div>
+        <div class="detail-field"><label>Entrada</label><span>${fmtDate(lead.created_at)}</span></div>
+      </div>
+    </div>
+
+    <!-- Botão WhatsApp -->
+    <div class="detail-section">
+      <a href="${buildWhatsAppUrl(lead.telefone, lead.nome)}" target="_blank" class="btn btn-green" style="width:100%;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.12 1.524 5.855L.057 24l6.305-1.654A11.954 11.954 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.6a9.6 9.6 0 0 1-4.898-1.341l-.352-.208-3.643.956.973-3.554-.228-.365A9.6 9.6 0 0 1 2.4 12c0-5.295 4.305-9.6 9.6-9.6s9.6 4.305 9.6 9.6-4.305 9.6-9.6 9.6z"/></svg>
+        Abrir WhatsApp
+      </a>
+    </div>
+
+    <!-- Status Comercial -->
+    <div class="detail-section">
+      <div class="detail-section-title">Status Comercial</div>
+      <div class="form-group">
+        <label class="form-label">Status atual</label>
+        <select id="sel-status" class="form-control" onchange="onStatusChange()">
+          ${['novo','contato','qualificado','reuniao','proposta','cliente','perdido'].map(s =>
+            `<option value="${s}" ${lead.status === s ? 'selected' : ''}>${{novo:'Novo',contato:'Contato',qualificado:'Qualificado',reuniao:'Reunião',proposta:'Proposta',cliente:'Cliente',perdido:'Perdido'}[s]}</option>`
+          ).join('')}
+        </select>
+      </div>
+
+      <!-- Cliente: valor da venda -->
+      <div id="venda-section" style="display:${lead.status === 'cliente' ? 'block' : 'none'};">
+        <div class="form-group">
+          <label class="form-label">Valor da Venda (R$)</label>
+          <input type="number" id="inp-valor" class="form-control" placeholder="500" min="0" value="${lead.valor_venda || ''}">
+        </div>
+      </div>
+
+      <!-- Perdido: motivo -->
+      <div id="perdido-section" style="display:${lead.status === 'perdido' ? 'block' : 'none'};">
+        <div class="form-group">
+          <label class="form-label">Motivo da perda</label>
+          <select id="sel-loss" class="form-control">
+            <option value="">Selecione...</option>
+            ${['Sem orçamento','Não respondeu','Fechou com concorrente','Não era o momento','Lead sem perfil','Outro'].map(m =>
+              `<option value="${m}" ${lead.loss_reason === m ? 'selected' : ''}>${m}</option>`
+            ).join('')}
+          </select>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;" onclick="saveStatus('${lead.lead_id}', '${lead.status}', ${JSON.stringify(lead.qualified_at)}, ${JSON.stringify(lead.closed_at)})">
+        Salvar Status
+      </button>
+    </div>
+
+    <!-- Observações -->
+    <div class="detail-section">
+      <div class="detail-section-title">Observações</div>
+      <div class="form-group">
+        <textarea id="inp-notes" class="form-control" style="min-height:100px;" placeholder="Ex: Falou que vai decidir sexta...">${lead.notes || ''}</textarea>
+      </div>
+      <button class="btn btn-secondary" style="width:100%;" onclick="saveNotes('${lead.lead_id}')">Salvar Observações</button>
+    </div>
+
+    <!-- Origem -->
+    <div class="detail-section">
+      <div class="detail-section-title">Origem</div>
+      <div class="detail-grid">
+        <div class="detail-field"><label>Origem</label><span>${origem}</span></div>
+        <div class="detail-field"><label>utm_source</label><span>${lead.utm_source || '—'}</span></div>
+        <div class="detail-field"><label>utm_medium</label><span>${lead.utm_medium || '—'}</span></div>
+        <div class="detail-field full"><label>utm_campaign</label><span>${lead.utm_campaign || '—'}</span></div>
+        <div class="detail-field"><label>utm_term</label><span>${lead.utm_term || '—'}</span></div>
+        <div class="detail-field"><label>utm_content</label><span>${lead.utm_content || '—'}</span></div>
+      </div>
+
+      <details style="margin-top:12px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--gray-400);font-weight:600;">Dados de Tracking (GCLID, FBCLID...)</summary>
+        <div class="detail-grid" style="margin-top:10px;">
+          <div class="detail-field"><label>gclid</label><span style="word-break:break-all;font-size:11px;">${lead.gclid || '—'}</span></div>
+          <div class="detail-field"><label>fbclid</label><span style="word-break:break-all;font-size:11px;">${lead.fbclid || '—'}</span></div>
+          <div class="detail-field"><label>gbraid</label><span>${lead.gbraid || '—'}</span></div>
+          <div class="detail-field"><label>wbraid</label><span>${lead.wbraid || '—'}</span></div>
+          <div class="detail-field full"><label>landing_page</label><span style="word-break:break-all;font-size:11px;">${lead.landing_page || '—'}</span></div>
+          <div class="detail-field full"><label>referrer</label><span style="word-break:break-all;font-size:11px;">${lead.referrer || '—'}</span></div>
+          <div class="detail-field"><label>qualified_at</label><span>${fmtDate(lead.qualified_at)}</span></div>
+          <div class="detail-field"><label>closed_at</label><span>${fmtDate(lead.closed_at)}</span></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Histórico -->
+    <div class="detail-section">
+      <div class="detail-section-title">Histórico de Status</div>
+      ${history.length === 0
+        ? `<div style="color:var(--gray-400);font-size:13px;">Sem histórico de alterações.</div>`
+        : history.map(h => `
+          <div class="history-item">
+            <span class="history-dot"></span>
+            <div class="history-content">
+              <div class="history-text">${h.old_status ? h.old_status + ' → ' : ''}${h.new_status}</div>
+              <div class="history-time">${fmtDate(h.created_at)}${h.changed_by ? ' · ' + h.changed_by : ''}</div>
+            </div>
+          </div>`).join('')
+      }
+    </div>
+  `;
+}
+
+function onStatusChange() {
+  const val = document.getElementById('sel-status').value;
+  document.getElementById('venda-section').style.display  = val === 'cliente'  ? 'block' : 'none';
+  document.getElementById('perdido-section').style.display = val === 'perdido' ? 'block' : 'none';
+}
+
+async function saveStatus(leadId, oldStatus, existingQualifiedAt, existingClosedAt) {
+  const newStatus   = document.getElementById('sel-status').value;
+  const valorVenda  = document.getElementById('inp-valor')?.value;
+  const lossReason  = document.getElementById('sel-loss')?.value;
+
+  const updates = { status: newStatus };
+  if (newStatus === 'cliente' && valorVenda) {
+    updates.valor_venda = parseFloat(valorVenda);
+    updates.currency = 'BRL';
+    if (!existingClosedAt) updates.closed_at = new Date().toISOString();
+  }
+  if (newStatus === 'qualificado' && !existingQualifiedAt) {
+    updates.qualified_at = new Date().toISOString();
+  }
+  if (newStatus === 'perdido' && lossReason) updates.loss_reason = lossReason;
+
+  const { error } = await supabase.from('leads').update(updates).eq('lead_id', leadId);
+  if (error) { showToast('Erro ao atualizar: ' + error.message, 'error'); return; }
+
+  // Registrar no histórico
+  if (newStatus !== oldStatus) {
+    const { data: { session } } = await supabase.auth.getSession();
+    await supabase.from('lead_status_history').insert({
+      lead_id: leadId, old_status: oldStatus, new_status: newStatus,
+      changed_by: session?.user?.email
+    });
+  }
+
+  showToast('Status atualizado com sucesso!', 'success');
+  loadLeads(currentPage);
+  // Reabrir para atualizar dados
+  setTimeout(() => openDrawer(leadId), 500);
+}
+
+async function saveNotes(leadId) {
+  const notes = document.getElementById('inp-notes').value;
+  const { error } = await supabase.from('leads').update({ notes }).eq('lead_id', leadId);
+  if (error) showToast('Erro ao salvar observações', 'error');
+  else showToast('Observações salvas!', 'success');
+}
+
+function closeDrawer(e) {
+  if (e.target === document.getElementById('lead-modal')) closeDrawerForce();
+}
+function closeDrawerForce() {
+  document.getElementById('lead-modal').classList.remove('open');
+  currentLeadId = null;
+}
+</script>
+</body>
+</html>
